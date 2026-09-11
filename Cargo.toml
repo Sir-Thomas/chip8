@@ -1,0 +1,9 @@
+[package]
+name = "chip8"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+env = "1.0.1"
+jiff = "0.2.35"
+rand = "0.10.2"
