@@ -38,7 +38,7 @@
         rustToolchain =
           with inputs.fenix.packages.${prev.stdenv.hostPlatform.system};
           combine (
-            with stable;
+            with latest;
             [
               clippy
               rustc

@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![feature(integer_widen_truncate)]
 
 mod app;
 mod chip8;

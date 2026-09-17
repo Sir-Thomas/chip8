@@ -3,11 +3,11 @@ use std::fs::read;
 use rand::random;
 
 const START_ADDRESS: u16 = 0x200;
-const FONTSET_START_ADDRESS: u16 = 0x50;
+const FONTSET_START_ADDRESS: usize = 0x50;
 
 pub const DISPLAY_WIDTH: usize = 64;
 pub const DISPLAY_HEIGHT: usize = 32;
-pub const PIXEL_ON: u32 = 0xFFFFFFFF;
+pub const PIXEL_ON: u32 = 0xFFFF_FFFF;
 
 const FLAG_REGISTER: usize = 0xF;
 
@@ -25,8 +25,8 @@ pub struct Chip8 {
 }
 
 impl Chip8 {
-    pub fn new() -> Self {
-        Chip8 {
+    pub const fn new() -> Self {
+        Self {
             registers: [0; 16],
             memory: [0; 4096],
             index: 0,
@@ -60,26 +60,28 @@ impl Chip8 {
             0xF0, 0x80, 0xF0, 0x80, 0x80  // F
         ];
 
-        for (i, &byte) in fontset.iter().enumerate() {
-            self.memory[FONTSET_START_ADDRESS as usize + i] = byte;
+        if let Some(destination) = self.memory.get_mut(FONTSET_START_ADDRESS..) {
+            destination.iter_mut()
+                .zip(fontset.iter().copied())
+                .for_each(|(slot, byte)| *slot = byte);
         }
     }
 
     pub fn load_rom(&mut self, filename: &str) {
-        let file = read(filename).expect(&format!("Failed to open ROM file: {filename}"));
-
-        for (i, &byte) in file.iter().enumerate() {
-            self.memory[START_ADDRESS as usize + i] = byte;
+        if let Ok(file) = read(filename) && let Some(destination) = self.memory.get_mut(usize::from(START_ADDRESS)..) {
+            destination.iter_mut()
+                .zip(file.iter().copied())
+                .for_each(|(slot, byte)| *slot = byte);
         }
     }
 
     fn process_opcode(&mut self, opcode: u16) {
-        let instruction_class = ((opcode & 0xF000) >> 12) as u8;
+        let instruction_class = (opcode & 0xF000) >> 12;
         let address = opcode & 0x0FFF;
-        let vx = ((opcode & 0x0F00) >> 8) as u8;
-        let vy = ((opcode & 0x00F0) >> 4) as u8;
-        let byte = (opcode & 0x00FF) as u8;
-        let nibble = (opcode & 0x000F) as u8;
+        let vx: u8 = ((opcode & 0x0F00) >> 8).truncate();
+        let vy: u8 = ((opcode & 0x00F0) >> 4).truncate();
+        let byte = (opcode & 0x00FF).truncate();
+        let nibble = (opcode & 0x000F).truncate();
         match instruction_class {
             0x0 => {
                 match opcode {
@@ -88,13 +90,16 @@ impl Chip8 {
                     // RET: Return from a subroutine
                     0x00ee => {
                         assert!(
-                            (self.stack_pointer as usize) > 0,
+                            (usize::from(self.stack_pointer)) > 0,
                             "Stack Underflow - RET with no matching CALL"
                         );
-                        self.stack_pointer -= 1;
-                        self.program_counter = self.stack[self.stack_pointer as usize];
+                        self.stack_pointer = self.stack_pointer.saturating_sub(1);
+                        if let Some(pc) = self.stack.get(usize::from(self.stack_pointer)) {
+                            self.program_counter = *pc;
+                        }
                     },
-                    _ => unreachable!("Invalid Opcode")
+                    _ => {} //unreachable!("Invalid Opcode") // Ignore instead of panic for certain
+                            //ROMS - not sure if this is necessary
                 }
             }
             0x1 => self.op_1nnn(address),
@@ -117,58 +122,60 @@ impl Chip8 {
     }
 
     // JP addr: Jump to location nnn
-    fn op_1nnn(&mut self, address: u16) {
+    const fn op_1nnn(&mut self, address: u16) {
         self.program_counter = address;
     }
 
     // CALL addr: Call subroutine at address nnn
     fn op_2nnn(&mut self, address: u16) {
         assert!(
-            (self.stack_pointer as usize) < self.stack.len(),
+            usize::from(self.stack_pointer) < self.stack.len(),
             "Stack Overflow - Too many nested subroutines",
         );
-        self.stack[self.stack_pointer as usize] = self.program_counter;
-        self.stack_pointer += 1;
+        if let Some(address) = self.stack.get_mut(usize::from(self.stack_pointer)) {
+            *address = self.program_counter;
+        }
+        self.stack_pointer = self.stack_pointer.saturating_add(1);
         self.program_counter = address;
     }
 
     // SE Vx, byte
     fn op_3xkk(&mut self, vx: u8, byte: u8) {
-        if self.registers[vx as usize] == byte {
-            self.program_counter += 2;
+        if self.register(vx) == byte {
+            self.program_counter = self.program_counter.saturating_add(2);
         }
     }
 
     // SNE Vx, byte
     fn op_4xkk(&mut self, vx: u8, byte: u8) {
-        if self.registers[vx as usize] != byte {
-            self.program_counter += 2;
+        if self.register(vx) != byte {
+            self.program_counter = self.program_counter.saturating_add(2);
         }
     }
 
     // SE Vx, Vy
     fn op_5xy0(&mut self, vx: u8, vy: u8) {
-        if self.registers[vx as usize] == self.registers[vy as usize] {
-            self.program_counter += 2;
+        if self.register(vx) == self.register(vy) {
+            self.program_counter = self.program_counter.saturating_add(2);
         }
     }
 
     // LD Vx, byte
     fn op_6xkk(&mut self, vx: u8, byte: u8) {
-        self.registers[vx as usize] = byte;
+        *self.register_mut(vx) = byte;
     }
 
     // ADD Vx, byte
     fn op_7xkk(&mut self, vx: u8, byte: u8) {
-        (self.registers[vx as usize], _) = self.registers[vx as usize].overflowing_add(byte);
+        (*self.register_mut(vx), _) = self.register(vx).overflowing_add(byte);
     }
 
     fn op_8xyn(&mut self, vx: u8, vy: u8, nibble: u8) {
         match nibble {
-            0x0 => self.registers[vx as usize] = self.registers[vy as usize],
-            0x1 => self.registers[vx as usize] |= self.registers[vy as usize],
-            0x2 => self.registers[vx as usize] &= self.registers[vy as usize],
-            0x3 => self.registers[vx as usize] ^= self.registers[vy as usize],
+            0x0 => *self.register_mut(vx) = self.register(vy),
+            0x1 => *self.register_mut(vx) |= self.register(vy),
+            0x2 => *self.register_mut(vx) &= self.register(vy),
+            0x3 => *self.register_mut(vx) ^= self.register(vy),
             0x4 => self.sum(vx, vy),
             0x5 => self.sub(vx, vy),
             0x6 => self.shr(vx),
@@ -179,77 +186,78 @@ impl Chip8 {
     }
 
     fn sum(&mut self, vx: u8, vy: u8) {
-        let (result, carry) = self.registers[vx as usize].overflowing_add(self.registers[vy as usize]);
-        self.registers[FLAG_REGISTER] = carry as u8;
-        self.registers[vx as usize] = result;
+        let (result, carry) = self.register(vx).overflowing_add(self.register(vy));
+        *self.register_mut(FLAG_REGISTER) = u8::from(carry);
+        *self.register_mut(vx) = result;
     }
 
     fn sub(&mut self, vx: u8, vy: u8) {
-        let (result, carry) = self.registers[vx as usize].overflowing_sub(self.registers[vy as usize]);
-        self.registers[FLAG_REGISTER] = carry as u8;
-        self.registers[vx as usize] = result;
+        let (result, carry) = self.register(vx).overflowing_sub(self.register(vy));
+        *self.register_mut(FLAG_REGISTER) = u8::from(carry);
+        *self.register_mut(vx) = result;
     }
 
     fn shr(&mut self, vx: u8) {
-        self.registers[FLAG_REGISTER] = self.registers[vx as usize] & 0x1;
-        self.registers[vx as usize] >>= 1;
+        *self.register_mut(FLAG_REGISTER) = self.register(vx) & 0x1;
+        *self.register_mut(usize::from(vx)) >>= 1;
     }
 
     fn subn(&mut self, vx: u8, vy: u8) {
-        let (result, carry) = self.registers[vy as usize].overflowing_sub(self.registers[vx as usize]);
-        self.registers[FLAG_REGISTER] = carry as u8;
-        self.registers[vx as usize] = result;
+        let (result, carry) = self.register(vy).overflowing_sub(self.register(vx));
+        *self.register_mut(FLAG_REGISTER) = u8::from(carry);
+        *self.register_mut(vx) = result;
     }
 
     fn shl(&mut self, vx: u8) {
-        self.registers[FLAG_REGISTER] = (self.registers[vx as usize] & 0x80) >> 7;
+        *self.register_mut(FLAG_REGISTER) = (self.register(vx) & 0x80) >> 7;
 
-        self.registers[vx as usize] <<= 1;
+        *self.register_mut(vx) <<= 1;
     }
 
     fn op_9xy0(&mut self, vx: u8, vy: u8) {
-        if self.registers[vx as usize] != self.registers[vy as usize] {
-            self.program_counter += 2;
+        if self.register(vx) != self.register(vy) {
+            self.program_counter = self.program_counter.saturating_add(2);
         }
     }
 
-    fn op_annn(&mut self, address: u16) {
+    const fn op_annn(&mut self, address: u16) {
         self.index = address;
     }
 
     fn op_bnnn(&mut self, address: u16) {
-        self.program_counter = self.registers[0] as u16 + address;
+        self.program_counter = u16::from(self.register(0u8)).saturating_add(address);
     }
 
     fn op_cxkk(&mut self, vx: u8, byte: u8) {
-        self.registers[vx as usize] = random::<u8>() & byte;
+        *self.register_mut(vx) = random::<u8>() & byte;
     }
 
     fn op_dxyn(&mut self, vx: u8, vy: u8, height: u8) {
-        let x_pos = self.registers[vx as usize] as usize % DISPLAY_WIDTH;
-        let y_pos = self.registers[vy as usize] as usize % DISPLAY_HEIGHT;
+        let x_pos = usize::from(self.register(vx)) % DISPLAY_WIDTH;
+        let y_pos = usize::from(self.register(vy)) % DISPLAY_HEIGHT;
 
-        self.registers[FLAG_REGISTER] = 0;
+        *self.register_mut(FLAG_REGISTER) = 0;
 
-        for row in 0..height as usize {
-            let byte = self.memory[self.index as usize + row as usize];
+        for row in 0..usize::from(height) {
+            let byte = self.read(usize::from(self.index).saturating_add(row));
             for col in 0..8 {
                 let sprite_pixel = byte & (0x80 >> col);
-                if sprite_pixel != 0x0 {
-                    let x = (x_pos + col) % DISPLAY_WIDTH;
-                    let y = (y_pos + row) % DISPLAY_HEIGHT;
-                    let screen_pixel = self.video[(y * DISPLAY_WIDTH + x) as usize];
-                    if screen_pixel == PIXEL_ON {
-                        self.registers[FLAG_REGISTER] = 1;
-                    } 
-                    self.video[(y * DISPLAY_WIDTH + x) as usize] = screen_pixel ^ PIXEL_ON;
+                if sprite_pixel == 0x0 {
+                    continue
                 }
+                let x = x_pos.saturating_add(col) % DISPLAY_WIDTH;
+                let y = y_pos.saturating_add(row) % DISPLAY_HEIGHT;
+                let screen_pixel = self.pixel(y.saturating_mul(DISPLAY_WIDTH).saturating_add(x));
+                if screen_pixel == PIXEL_ON {
+                    *self.register_mut(FLAG_REGISTER) = 1;
+                } 
+                *self.pixel_mut(y.saturating_mul(DISPLAY_WIDTH).saturating_add(x)) = screen_pixel ^ PIXEL_ON;
             }
         }
     }
 
     fn op_exkk(&mut self, vx: u8, byte: u8) {
-        let key = self.registers[vx as usize];
+        let key = self.register(vx);
 
         let pressed = match byte {
             0x9E => true,
@@ -257,84 +265,121 @@ impl Chip8 {
             _ => unreachable!("Invalid Opcode")
         };
 
-        if self.keypad[key as usize] == pressed {
-            self.program_counter += 2;
+        if self.key(key) == pressed {
+            self.program_counter = self.program_counter.saturating_add(2);
         }
     }
 
     fn op_fxkk(&mut self, vx: u8, byte: u8) {
         match byte {
-            0x07 => self.registers[vx as usize] = self.delay_timer,
+            0x07 => *self.register_mut(vx) = self.delay_timer,
             0x0A => self.wait_for_keypress(vx),
-            0x15 => self.delay_timer = self.registers[vx as usize],
-            0x18 => self.sound_timer = self.registers[vx as usize],
-            0x1E => self.index += self.registers[vx as usize] as u16,
+            0x15 => self.delay_timer = self.register(vx),
+            0x18 => self.sound_timer = self.register(vx),
+            0x1E => self.index = self.index.saturating_add(u16::from(self.register(vx))),
             0x29 => self.load_font(vx),
             0x33 => self.binary_coded_decimal(vx),
             0x55 => self.store_registers(vx),
             0x65 => self.load_registers(vx),
-            _ => unreachable!("Invalid Opcode")
+            _ => unreachable!("Invalid Opcode: F{vx:X}{byte:X}")
         }
     }
 
     fn wait_for_keypress(&mut self, vx: u8) {
-        for i in 0..16 {
-            if self.keypad[i as usize] {
-                self.registers[vx as usize] = i;
+        for key_index in 0..16 {
+            if self.key(key_index) {
+                *self.register_mut(vx) = key_index;
                 return;
             }
         }
-        self.program_counter -= 2;
+        self.program_counter = self.program_counter.saturating_sub(2);
     }
 
     fn load_font(&mut self, vx: u8) {
-        self.index = FONTSET_START_ADDRESS + 5 * self.registers[vx as usize] as u16;
+        self.index = FONTSET_START_ADDRESS
+            .saturating_add(5usize.saturating_mul(usize::from(self.register(vx))))
+            .truncate();
     }
 
     fn binary_coded_decimal(&mut self, vx: u8) {
-        let value = self.registers[vx as usize];
-        self.memory[self.index as usize + 2] = value % 10;
+        let value = self.register(vx);
+        *self.memory_mut(self.index.saturating_add(2)) = value % 10;
         let value = value / 10;
-        self.memory[self.index as usize + 1] = value % 10;
+        *self.memory_mut(self.index.saturating_add(1)) = value % 10;
         let value = value / 10;
-        self.memory[self.index as usize] = value % 10;
+        *self.memory_mut(self.index) = value % 10;
     }
 
     fn store_registers(&mut self, vx: u8) {
-        for i in 0..=vx as usize {
-            self.memory[self.index as usize + i] = self.registers[i];
+        for i in 0..=vx {
+            *self.memory_mut(self.index.saturating_add(u16::from(i))) = self.register(i);
         }
     }
 
     fn load_registers(&mut self, vx: u8) {
-        for i in 0..=vx as usize {
-            self.registers[i] = self.memory[self.index as usize + i];
+        for i in 0..=vx {
+            *self.register_mut(i) = self.read(self.index.saturating_add(u16::from(i)));
         }
     }
 
-    pub fn cycle(&mut self) {
-        let msb = self.memory[self.program_counter as usize] as u16;
-        let lsb = self.memory[self.program_counter as usize + 1] as u16;
-        let opcode = (msb << 8) + lsb;
+    fn register_mut<I: Into<usize>>(&mut self, index: I) -> &mut u8 {
+        self.registers.get_mut(index.into())
+            .expect("Index is always 0-15 because of bit mask")
+    }
 
-        self.program_counter += 2;
+    fn register<I: Into<usize>>(&self, index: I) -> u8 {
+        *self.registers.get(index.into())
+            .expect("Index is always 0-15 because of bit mask")
+    }
+
+    fn pixel_mut<I: Into<usize>>(&mut self, index: I) -> &mut u32 {
+        self.video.get_mut(index.into())
+            .expect("Index is bounded by 12 bit address")
+    }
+
+    fn pixel<I: Into<usize>>(&self, index: I) -> u32 {
+        *self.video.get(index.into())
+            .expect("Index is bounded by 12 bit address")
+    }
+
+    fn memory_mut<I: Into<usize>>(&mut self, index: I) -> &mut u8 {
+        self.memory.get_mut(index.into())
+            .expect("Index is bounded by 12 bit address")
+    }
+
+    fn read<I: Into<usize>>(&self, index: I) -> u8 {
+        *self.memory.get(index.into())
+            .expect("Index is bounded by 12 bit address")
+    }
+
+    fn key<I: Into<usize>>(&self, index: I) -> bool {
+        *self.keypad.get(index.into())
+            .expect("Index is always 0-15 because of bit mask")
+    }
+
+    pub fn cycle(&mut self) {
+        let msb = u16::from(self.read(self.program_counter));
+        let lsb = u16::from(self.read(self.program_counter.saturating_add(1)));
+        let opcode = (msb << 8).saturating_add(lsb);
+
+        self.program_counter = self.program_counter.saturating_add(2);
 
         self.process_opcode(opcode);
 
         if self.delay_timer > 0 {
-            self.delay_timer -= 1;
+            self.delay_timer = self.delay_timer.saturating_sub(1);
         }
 
         if self.sound_timer > 0 {
-            self.sound_timer -= 1;
+            self.sound_timer = self.sound_timer.saturating_sub(1);
         }
     }
 
-    pub fn get_video(&self) -> &[u32; DISPLAY_WIDTH * DISPLAY_HEIGHT] {
+    pub const fn get_video(&self) -> &[u32; DISPLAY_WIDTH * DISPLAY_HEIGHT] {
         &self.video
     }
 
-    pub fn process_input(&mut self, input: [bool; 16]) {
+    pub const fn process_input(&mut self, input: [bool; 16]) {
         self.keypad = input;
     }
 }
