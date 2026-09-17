@@ -17,7 +17,7 @@ pub struct Chip8 {
     delay_timer: u8,
     sound_timer: u8,
     keypad: [bool; 16],
-    pub video: [u32; DISPLAY_WIDTH * DISPLAY_HEIGHT],
+    video: [u32; DISPLAY_WIDTH * DISPLAY_HEIGHT],
 }
 
 impl Chip8 {
@@ -318,7 +318,11 @@ impl Chip8 {
         }
     }
 
-    pub fn process_input(&mut self) -> bool {
-        false
+    pub fn get_video(&self) -> [u32; DISPLAY_WIDTH * DISPLAY_HEIGHT] {
+        self.video
+    }
+
+    pub fn process_input(&mut self, input: [bool; 16]) {
+        self.keypad = input;
     }
 }

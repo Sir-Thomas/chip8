@@ -29,6 +29,7 @@ fn main() -> eframe::Result {
 }
 
 
+/*
 fn init() {
     print!("\x1B[2J\x1B[H");
     let mut args = std::env::args();
@@ -47,13 +48,12 @@ fn init() {
     let mut last_cycle_time = jiff::Timestamp::now();
 
     while !quit {
-        quit = chip8.process_input();
         let current_time = jiff::Timestamp::now();
         let delta = current_time - last_cycle_time;
         if delta.get_milliseconds() > delay {
             last_cycle_time = current_time;
             chip8.cycle();
-            display_video(&chip8.video);
+            display_video(chip8.get_video());
             play_audio();
             update_keyboard();
         }
@@ -77,3 +77,4 @@ fn play_audio() {
 
 fn update_keyboard() {
 }
+*/
