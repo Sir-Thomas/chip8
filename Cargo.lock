@@ -614,6 +614,7 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "jiff",
+ "moving_avg",
  "rand",
 ]
 
@@ -1861,6 +1862,15 @@ checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
 dependencies = [
  "adler2",
  "simd-adler32",
+]
+
+[[package]]
+name = "moving_avg"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5f94f2ad817676ed7698736c8adb4e3dcdd4ea86a16486d63f46bf755dafffb"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
