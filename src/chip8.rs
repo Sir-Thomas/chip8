@@ -62,7 +62,7 @@ impl Chip8 {
     }
 
     pub fn load_rom(&mut self, filename: &str) {
-        let file = std::fs::read(filename).expect("Failed to open ROM file");
+        let file = std::fs::read(filename).expect(&format!("Failed to open ROM file: {filename}"));
 
         for (i, &byte) in file.iter().enumerate() {
             self.memory[START_ADDRESS as usize + i] = byte;
