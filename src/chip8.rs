@@ -1,3 +1,7 @@
+use std::fs::read;
+
+use rand::random;
+
 const START_ADDRESS: u16 = 0x200;
 const FONTSET_START_ADDRESS: u16 = 0x50;
 
@@ -62,7 +66,7 @@ impl Chip8 {
     }
 
     pub fn load_rom(&mut self, filename: &str) {
-        let file = std::fs::read(filename).expect(&format!("Failed to open ROM file: {filename}"));
+        let file = read(filename).expect(&format!("Failed to open ROM file: {filename}"));
 
         for (i, &byte) in file.iter().enumerate() {
             self.memory[START_ADDRESS as usize + i] = byte;
@@ -83,10 +87,14 @@ impl Chip8 {
                     0x00e0 => self.video = [0; DISPLAY_WIDTH * DISPLAY_HEIGHT],
                     // RET: Return from a subroutine
                     0x00ee => {
-                        self.stack_pointer -= 1; // TODO: handle underflow
+                        assert!(
+                            (self.stack_pointer as usize) > 0,
+                            "Stack Underflow - RET with no matching CALL"
+                        );
+                        self.stack_pointer -= 1;
                         self.program_counter = self.stack[self.stack_pointer as usize];
                     },
-                    _ => {} // TODO: error on invalid value
+                    _ => unreachable!("Invalid Opcode")
                 }
             }
             0x1 => self.op_1nnn(address),
@@ -104,7 +112,7 @@ impl Chip8 {
             0xD => self.op_dxyn(vx, vy, nibble),
             0xE => self.op_exkk(vx, byte),
             0xF => self.op_fxkk(vx, byte),
-            _ => {} //TODO: error on invalid value
+            _ => unreachable!("Instruction out of 4 bit range: {instruction_class:#x}")
         }
     }
 
@@ -115,8 +123,12 @@ impl Chip8 {
 
     // CALL addr: Call subroutine at address nnn
     fn op_2nnn(&mut self, address: u16) {
+        assert!(
+            (self.stack_pointer as usize) < self.stack.len(),
+            "Stack Overflow - Too many nested subroutines",
+        );
         self.stack[self.stack_pointer as usize] = self.program_counter;
-        self.stack_pointer += 1; // TODO: handle overflow
+        self.stack_pointer += 1;
         self.program_counter = address;
     }
 
@@ -210,7 +222,7 @@ impl Chip8 {
     }
 
     fn op_cxkk(&mut self, vx: u8, byte: u8) {
-        self.registers[vx as usize] = rand::random::<u8>() & byte;
+        self.registers[vx as usize] = random::<u8>() & byte;
     }
 
     fn op_dxyn(&mut self, vx: u8, vy: u8, height: u8) {
@@ -242,7 +254,7 @@ impl Chip8 {
         let pressed = match byte {
             0x9E => true,
             0xA1 => false,
-            _ => return, // TODO: error on invalid value
+            _ => unreachable!("Invalid Opcode")
         };
 
         if self.keypad[key as usize] == pressed {
@@ -261,7 +273,7 @@ impl Chip8 {
             0x33 => self.binary_coded_decimal(vx),
             0x55 => self.store_registers(vx),
             0x65 => self.load_registers(vx),
-            _ => {} // TODO: error on invalid value
+            _ => unreachable!("Invalid Opcode")
         }
     }
 
@@ -318,8 +330,8 @@ impl Chip8 {
         }
     }
 
-    pub fn get_video(&self) -> [u32; DISPLAY_WIDTH * DISPLAY_HEIGHT] {
-        self.video
+    pub fn get_video(&self) -> &[u32; DISPLAY_WIDTH * DISPLAY_HEIGHT] {
+        &self.video
     }
 
     pub fn process_input(&mut self, input: [bool; 16]) {

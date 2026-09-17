@@ -1,16 +1,14 @@
-use std::time::Duration;
-
-use eframe::{CreationContext, Frame, egui::{self, CentralPanel, Color32, ColorImage, Context, Image, Key, Label, TextEdit, TextureOptions, Ui}};
+use eframe::{CreationContext, Frame, egui::{self, CentralPanel, Color32, ColorImage, Context, Image, Key, Label, TextureOptions, Ui}};
 use jiff::Timestamp;
 use moving_avg::MovingAverage;
 
-use crate::chip8::{self, Chip8, DISPLAY_HEIGHT, DISPLAY_WIDTH, PIXEL_ON};
+use crate::chip8::{Chip8, DISPLAY_HEIGHT, DISPLAY_WIDTH, PIXEL_ON};
 
 const STARTING_SCALE: usize = 10;
 const FRAME_TIME_SAMPLES: usize = 60;
 
 pub struct Chip8App {
-    chip8: chip8::Chip8,
+    chip8: Chip8,
     display_texture: egui::TextureHandle,
     scale: usize,
     current_frame: Timestamp,
@@ -27,8 +25,8 @@ impl Chip8App {
         );
 
         Self {
-            chip8: chip8,
-            display_texture: display_texture,
+            chip8,
+            display_texture,
             scale: STARTING_SCALE,
             current_frame: Timestamp::now(),
             previous_frame: Timestamp::now(),
@@ -43,8 +41,8 @@ impl eframe::App for Chip8App {
         self.previous_frame = self.current_frame;
         self.current_frame = Timestamp::now();
         let avg = self.frame_time.feed((self.current_frame - self.previous_frame).get_milliseconds() as f64);
+        self.chip8.process_input(poll_keyboard(ui.ctx()));
         for _ in 0..60 {
-          self.chip8.process_input(poll_keyboard(ui.ctx()));
           self.chip8.cycle();
         }
         let image = framebuffer_to_image(self.chip8.get_video());
@@ -53,15 +51,11 @@ impl eframe::App for Chip8App {
         CentralPanel::default().show(ui, |ui| {
             ui.horizontal(|ui| {
                 if ui.add(egui::Button::new("-")).clicked() {
-                    self.scale -= 1;
+                    if self.scale > 1 {
+                        self.scale -= 1;
+                    }
                 }
-                // to_string().as_str() is needed because we first have to convert the usize to a
-                // String, then convert the String to &str to make the TextEdit show the number
-                // without allowing manual entries
-                ui.add(TextEdit::singleline(&mut self.scale.to_string().as_str())
-                    .desired_width(0.0)
-                    .clip_text(false)
-                );
+                ui.add(Label::new(self.scale.to_string()));
                 if ui.add(egui::Button::new("+")).clicked() {
                     self.scale += 1;
                 }
@@ -85,7 +79,7 @@ impl eframe::App for Chip8App {
     }
 }
 
-fn framebuffer_to_image(array: [u32; DISPLAY_WIDTH * DISPLAY_HEIGHT]) -> ColorImage {
+fn framebuffer_to_image(array: &[u32; DISPLAY_WIDTH * DISPLAY_HEIGHT]) -> ColorImage {
     let pixels = array
         .iter()
         .map(|&pixel| if pixel == PIXEL_ON { Color32::WHITE } else { Color32::BLACK })
