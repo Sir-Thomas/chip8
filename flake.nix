@@ -62,7 +62,6 @@
               cargo-watch
               rust-analyzer
               self.formatter.${system}
-
 	      wayland
 	      libxkbcommon
 	      libGL
@@ -70,6 +69,7 @@
 	      libxcursor
 	      libxrandr
 	      libxi
+	      alsa-lib
             ];
 
             env = {
@@ -83,6 +83,7 @@
 	        pkgs.libxcursor
 	        pkgs.libxrandr
 	        pkgs.libxi
+		pkgs.alsa-lib
 	      ];
             };
           };

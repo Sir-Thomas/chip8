@@ -7,6 +7,7 @@ edition = "2024"
 eframe = "0.36.2"
 moving_avg = "0.2.0"
 rand = "0.10.2"
+rodio = "0.22.2"
 
 [lints.clippy]
 pedantic = { level = "deny", priority = -1 }

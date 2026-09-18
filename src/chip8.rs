@@ -1,6 +1,7 @@
-use std::fs::read;
+use std::{fs::read, time::Duration};
 
 use rand::random;
+use rodio::{DeviceSinkBuilder, MixerDeviceSink, Player, Source, source::SineWave};
 
 const START_ADDRESS: u16 = 0x200;
 const FONTSET_START_ADDRESS: usize = 0x50;
@@ -22,10 +23,20 @@ pub struct Chip8 {
     sound_timer: u8,
     keypad: [bool; 16],
     video: [u32; DISPLAY_WIDTH * DISPLAY_HEIGHT],
+    _audio_sink: Option<MixerDeviceSink>,
+    audio_player: Option<Player>,
 }
 
 impl Chip8 {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
+        let (audio_player, audio_sink) = DeviceSinkBuilder::open_default_sink()
+            .map_or_else(|_| (None, None), |sink| (Some(Player::connect_new(sink.mixer())), Some(sink)));
+        //  let (audio_player, audio_sink) = if let Ok(sink) = DeviceSinkBuilder::open_default_sink() {
+            //  (Some(Player::connect_new(&sink.mixer())), Some(sink))
+        //  } else {
+            //  (None, None)
+        //  };
+
         Self {
             registers: [0; 16],
             memory: [0; 4096],
@@ -37,6 +48,8 @@ impl Chip8 {
             sound_timer: 0,
             keypad: [false; 16],
             video: [0; DISPLAY_WIDTH * DISPLAY_HEIGHT],
+            _audio_sink: audio_sink,
+            audio_player,
         }
     }
 
@@ -275,7 +288,7 @@ impl Chip8 {
             0x07 => *self.register_mut(vx) = self.delay_timer,
             0x0A => self.wait_for_keypress(vx),
             0x15 => self.delay_timer = self.register(vx),
-            0x18 => self.sound_timer = self.register(vx),
+            0x18 => self.start_sound(self.register(vx)), //self.sound_timer = self.register(vx),
             0x1E => self.index = self.index.saturating_add(u16::from(self.register(vx))),
             0x29 => self.load_font(vx),
             0x33 => self.binary_coded_decimal(vx),
@@ -367,9 +380,17 @@ impl Chip8 {
         self.process_opcode(opcode);
     }
 
-    pub fn decrement_timers(&mut self) {
+    pub const fn decrement_timers(&mut self) {
         self.delay_timer = self.delay_timer.saturating_sub(1);
         self.sound_timer = self.sound_timer.saturating_sub(1);
+    }
+
+    fn start_sound(&mut self, duration: u8) {
+        self.sound_timer = duration;
+        if let Some(ref player) = self.audio_player {
+            let source = SineWave::new(440.0).take_duration(Duration::from_secs_f64(f64::from(duration) / 60.0)); //.amplify(0.20);
+            player.append(source);
+        }
     }
 
     pub const fn get_video(&self) -> &[u32; DISPLAY_WIDTH * DISPLAY_HEIGHT] {
