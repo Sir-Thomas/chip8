@@ -25,6 +25,7 @@ pub struct Chip8 {
     video: [u32; DISPLAY_WIDTH * DISPLAY_HEIGHT],
     _audio_sink: Option<MixerDeviceSink>,
     audio_player: Option<Player>,
+    waiting_for_key: Option<u8>,
 }
 
 impl Chip8 {
@@ -50,6 +51,7 @@ impl Chip8 {
             video: [0; DISPLAY_WIDTH * DISPLAY_HEIGHT],
             _audio_sink: audio_sink,
             audio_player,
+            waiting_for_key: None,
         }
     }
 
@@ -200,31 +202,32 @@ impl Chip8 {
 
     fn sum(&mut self, vx: u8, vy: u8) {
         let (result, carry) = self.register(vx).overflowing_add(self.register(vy));
-        *self.register_mut(FLAG_REGISTER) = u8::from(carry);
         *self.register_mut(vx) = result;
+        *self.register_mut(FLAG_REGISTER) = u8::from(carry);
     }
 
     fn sub(&mut self, vx: u8, vy: u8) {
         let (result, carry) = self.register(vx).overflowing_sub(self.register(vy));
-        *self.register_mut(FLAG_REGISTER) = u8::from(carry);
         *self.register_mut(vx) = result;
+        *self.register_mut(FLAG_REGISTER) = u8::from(!carry);
     }
 
     fn shr(&mut self, vx: u8) {
-        *self.register_mut(FLAG_REGISTER) = self.register(vx) & 0x1;
+        let flag = self.register(vx) & 0x1;
         *self.register_mut(usize::from(vx)) >>= 1;
+        *self.register_mut(FLAG_REGISTER) = flag;
     }
 
     fn subn(&mut self, vx: u8, vy: u8) {
         let (result, carry) = self.register(vy).overflowing_sub(self.register(vx));
-        *self.register_mut(FLAG_REGISTER) = u8::from(carry);
         *self.register_mut(vx) = result;
+        *self.register_mut(FLAG_REGISTER) = u8::from(!carry);
     }
 
     fn shl(&mut self, vx: u8) {
-        *self.register_mut(FLAG_REGISTER) = (self.register(vx) & 0x80) >> 7;
-
+        let flag = (self.register(vx) & 0x80) >> 7;
         *self.register_mut(vx) <<= 1;
+        *self.register_mut(FLAG_REGISTER) = flag;
     }
 
     fn op_9xy0(&mut self, vx: u8, vy: u8) {
@@ -299,10 +302,17 @@ impl Chip8 {
     }
 
     fn wait_for_keypress(&mut self, vx: u8) {
-        for key_index in 0..16 {
-            if self.key(key_index) {
-                *self.register_mut(vx) = key_index;
+        if let Some(key) = self.waiting_for_key {
+            if !self.key(key) {
+                *self.register_mut(vx) = key;
+                self.waiting_for_key = None;
                 return;
+            }
+        } else {
+            for key_index in 0..16 {
+                if self.key(key_index) {
+                    self.waiting_for_key = Some(key_index);
+                }
             }
         }
         self.program_counter = self.program_counter.saturating_sub(2);
