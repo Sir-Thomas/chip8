@@ -365,14 +365,11 @@ impl Chip8 {
         self.program_counter = self.program_counter.saturating_add(2);
 
         self.process_opcode(opcode);
+    }
 
-        if self.delay_timer > 0 {
-            self.delay_timer = self.delay_timer.saturating_sub(1);
-        }
-
-        if self.sound_timer > 0 {
-            self.sound_timer = self.sound_timer.saturating_sub(1);
-        }
+    pub fn decrement_timers(&mut self) {
+        self.delay_timer = self.delay_timer.saturating_sub(1);
+        self.sound_timer = self.sound_timer.saturating_sub(1);
     }
 
     pub const fn get_video(&self) -> &[u32; DISPLAY_WIDTH * DISPLAY_HEIGHT] {

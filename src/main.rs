@@ -1,16 +1,18 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![feature(integer_widen_truncate)]
+#![feature(duration_millis_float)]
 
 mod app;
 mod chip8;
 
 use eframe::{NativeOptions, Result, egui::ViewportBuilder, run_native};
 
-use crate::chip8::Chip8;
+use crate::{app::Chip8App, chip8::Chip8};
 
 fn main() -> Result {
     let options = NativeOptions {
         viewport: ViewportBuilder::default().with_inner_size([320.0, 240.0]),
+        //wgpu_options: WgpuConfiguration::default().with_surface_config(SurfaceConfig { present_mode: PresentMode::AutoNoVsync, desired_maximum_frame_latency: None }),
         ..Default::default()
     };
 
@@ -25,7 +27,7 @@ fn main() -> Result {
         "Chip-8",
         options,
         Box::new(|cc| {
-            Ok(Box::new(app::Chip8App::new(cc, chip8)))
+            Ok(Box::new(Chip8App::new(cc, chip8)))
         }),
     )
 }
